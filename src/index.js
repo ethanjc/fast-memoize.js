@@ -7,6 +7,60 @@ module.exports = function memoize (fn, options) {
   var serializer
   var strategy
 
+  function strategyDefault (fn, options) {
+    function monadic (fn, cache, serializer, arg) {
+      var cacheKey
+      if (isPrimitive(arg)) {
+        cacheKey = arg
+      } else {
+        cacheKey = serializer(arg)
+      }
+
+      if (!cache.has(cacheKey)) {
+        var computedValue = fn.call(this, arg)
+        cache.set(cacheKey, computedValue)
+        return computedValue
+      }
+
+      return cache.get(cacheKey)
+    }
+
+    function variadic (fn, cache, serializer, ...args) {
+      var cacheKey = serializer(args)
+
+      if (!cache.has(cacheKey)) {
+        var computedValue = fn.apply(this, args)
+        cache.set(cacheKey, computedValue)
+        return computedValue
+      }
+
+      return cache.get(cacheKey)
+    }
+
+    var memoized = fn.length === 1
+      ? monadic
+      : variadic
+
+    memoized = memoized.bind(
+      this,
+      fn,
+      options.cache.create(),
+      options.serializer
+    )
+
+    arguments[0] = memoized
+
+    return memoized
+  }
+
+  function serializerDefault (...args) {
+    return JSON.stringify(args)
+  }
+
+  const cacheDefault = {
+    create: () => new ObjectWithoutPrototypeCache()
+  }
+
   if (options && options.cache) {
     cache = options.cache
   } else {
@@ -39,60 +93,6 @@ function isPrimitive (value) {
   return value == null || (typeof value !== 'function' && typeof value !== 'object')
 }
 
-function strategyDefault (fn, options) {
-  function monadic (fn, cache, serializer, arg) {
-    var cacheKey
-    if (isPrimitive(arg)) {
-      cacheKey = arg
-    } else {
-      cacheKey = serializer(arg)
-    }
-
-    if (!cache.has(cacheKey)) {
-      var computedValue = fn.call(this, arg)
-      cache.set(cacheKey, computedValue)
-      return computedValue
-    }
-
-    return cache.get(cacheKey)
-  }
-
-  function variadic (fn, cache, serializer, ...args) {
-    var cacheKey = serializer(args)
-
-    if (!cache.has(cacheKey)) {
-      var computedValue = fn.apply(this, args)
-      cache.set(cacheKey, computedValue)
-      return computedValue
-    }
-
-    return cache.get(cacheKey)
-  }
-
-  var memoized = fn.length === 1
-    ? monadic
-    : variadic
-
-  memoized = memoized.bind(
-    this,
-    fn,
-    options.cache.create(),
-    options.serializer
-  )
-
-  arguments[0] = memoized
-
-  return memoized
-}
-
-//
-// Serializer
-//
-
-function serializerDefault (...args) {
-  return JSON.stringify(args)
-}
-
 //
 // Cache
 //
@@ -117,8 +117,4 @@ class ObjectWithoutPrototypeCache {
   delete (key) {
     delete this.cache[key]
   }
-}
-
-const cacheDefault = {
-  create: () => new ObjectWithoutPrototypeCache()
 }
